@@ -1,0 +1,51 @@
+/* Custom Scrollbar for better aesthetics */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9; 
+    border-radius: 4px;
+}
+ 
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1; 
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8; 
+}
+
+/* Modal Transition Utilities */
+.modal-open {
+    display: flex !important;
+}
+
+.modal-content-show {
+    transform: scale(1) !important;
+    opacity: 1 !important;
+}
+
+/* Input Focus Ring transition */
+input, select {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Form section headers */
+.form-section-header {
+    margin-top: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e5e7eb;
+    color: #0284c7;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Inner Box shadow for preview */
+.box-shadow-inner {
+    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+}
