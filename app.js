@@ -1,7 +1,28 @@
-// Configurações do Supabase
-const SUPABASE_URL = 'https://cdyzmasihytafnlwzbxt.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_C6n-WNNMlGhciNSuSilzpw_OhfN05gx';
-const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+import { createClient } from '@supabase/supabase-js';
+
+// Configuracoes do Supabase (via .env)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY =
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+const RESERVATIONS_TABLE = import.meta.env.VITE_SUPABASE_TABLE || 'reservations';
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+    throw new Error(
+        'As variaveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY (ou VITE_SUPABASE_ANON_KEY) sao obrigatorias.'
+    );
+}
+
+const _supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: {
+        headers: {
+            apikey: SUPABASE_KEY,
+        },
+    },
+    auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+    },
+});
 
 // Global state
 let reservations = [];
@@ -32,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // FUNÇÕES DE COMUNICAÇÃO COM SUPABASE
 async function loadFromSupabase() {
     const { data, error } = await _supabase
-        .from('reservations')
+        .from(RESERVATIONS_TABLE)
         .select('*');
 
     if (error) {
@@ -97,14 +118,14 @@ async function saveReservation() {
     if (editingId) {
         // UPDATE
         result = await _supabase
-            .from('reservations')
+            .from(RESERVATIONS_TABLE)
             .update(reservationDB)
             .eq('id', editingId);
     } else {
         // INSERT (Gera ID automático via BIGINT se configurado, ou usamos Date.now)
         reservationDB.id = parseInt(Date.now().toString().slice(-9)); // Reduzindo para caber no BigInt se necessário
         result = await _supabase
-            .from('reservations')
+            .from(RESERVATIONS_TABLE)
             .insert([reservationDB]);
     }
 
@@ -119,7 +140,7 @@ async function saveReservation() {
 async function deleteReservation(id) {
     if (confirm('Tem certeza que deseja excluir esta reserva permanentemente do banco de dados?')) {
         const { error } = await _supabase
-            .from('reservations')
+            .from(RESERVATIONS_TABLE)
             .delete()
             .eq('id', id);
 
