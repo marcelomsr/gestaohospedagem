@@ -1,3 +1,8 @@
+// Configurações do Supabase
+const SUPABASE_URL = 'https://cdyzmasihytafnlwzbxt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_C6n-WNNMlGhciNSuSilzpw_OhfN05gx';
+const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // Global state
 let reservations = [];
 let editingId = null;
@@ -15,20 +20,121 @@ document.addEventListener('DOMContentLoaded', () => {
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     document.getElementById('current-date-display').textContent = new Date().toLocaleDateString('pt-BR', options).replace(/^./, str => str.toUpperCase());
     
-    // Setup filter month options
     setupMonthFilter();
 
-    // Load data
-    loadFromLocalStorage();
+    // Carregar dados do Supabase ao iniciar
+    loadFromSupabase();
     
-    // Event listeners
     document.getElementById('filter-month').addEventListener('change', renderUI);
     document.getElementById('filter-platform').addEventListener('change', renderUI);
 });
 
+// FUNÇÕES DE COMUNICAÇÃO COM SUPABASE
+async function loadFromSupabase() {
+    const { data, error } = await _supabase
+        .from('reservations')
+        .select('*');
+
+    if (error) {
+        console.error('Erro ao buscar dados:', error);
+        reservations = [];
+    } else {
+        // Mapear snake_case do banco para camelCase do seu JS
+        reservations = data.map(r => ({
+            id: r.id.toString(),
+            propertyName: r.property_name,
+            platform: r.platform,
+            guestName: r.guest_name,
+            secondGuestName: r.second_guest_name,
+            visitorsName: r.visitors_name,
+            carDetails: r.car_details,
+            checkinDate: r.checkin_date,
+            checkoutDate: r.checkout_date,
+            nights: r.nights,
+            totalValue: parseFloat(r.total_value),
+            hostFeePercent: parseFloat(r.host_fee_percent),
+            cleaningFeePaid: parseFloat(r.cleaning_fee_paid),
+            cleanerPay: parseFloat(r.cleaner_pay),
+            cleanerName: r.cleaner_name,
+            cleaningDate: r.cleaning_date,
+            hostEarned: parseFloat(r.host_earned),
+            ownerEarned: parseFloat(r.owner_earned)
+        }));
+    }
+    renderUI();
+}
+
+async function saveReservation() {
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const { hostEarned, ownerEarned, cleanerPay } = calculatePreview();
+    
+    // Objeto formatado para o Banco de Dados (Snake Case)
+    const reservationDB = {
+        property_name: document.getElementById('propertyName').value,
+        platform: document.getElementById('platform').value,
+        guest_name: document.getElementById('guestName').value,
+        second_guest_name: document.getElementById('secondGuestName').value,
+        visitors_name: document.getElementById('visitorsName').value,
+        car_details: document.getElementById('carDetails').value,
+        checkin_date: document.getElementById('checkinDate').value,
+        checkout_date: document.getElementById('checkoutDate').value,
+        nights: calculateNights(),
+        total_value: parseFloat(document.getElementById('totalValue').value) || 0,
+        host_fee_percent: parseFloat(document.getElementById('hostFeePercent').value) || 10,
+        cleaning_fee_paid: parseFloat(document.getElementById('cleaningFeePaid').value) || 130,
+        cleaner_pay: parseFloat(document.getElementById('cleanerPay').value) || 116,
+        cleaner_name: document.getElementById('cleanerName').value,
+        cleaning_date: document.getElementById('cleaningDate').value,
+        host_earned: hostEarned,
+        owner_earned: ownerEarned
+    };
+
+    let result;
+    if (editingId) {
+        // UPDATE
+        result = await _supabase
+            .from('reservations')
+            .update(reservationDB)
+            .eq('id', editingId);
+    } else {
+        // INSERT (Gera ID automático via BIGINT se configurado, ou usamos Date.now)
+        reservationDB.id = parseInt(Date.now().toString().slice(-9)); // Reduzindo para caber no BigInt se necessário
+        result = await _supabase
+            .from('reservations')
+            .insert([reservationDB]);
+    }
+
+    if (result.error) {
+        alert('Erro ao salvar no Supabase: ' + result.error.message);
+    } else {
+        await loadFromSupabase(); // Recarrega e renderiza
+        toggleNewReservationModal();
+    }
+}
+
+async function deleteReservation(id) {
+    if (confirm('Tem certeza que deseja excluir esta reserva permanentemente do banco de dados?')) {
+        const { error } = await _supabase
+            .from('reservations')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            alert('Erro ao excluir: ' + error.message);
+        } else {
+            await loadFromSupabase();
+        }
+    }
+}
+
+// FUNÇÕES DE UI E LÓGICA (MANTIDAS QUASE IGUAIS)
+
 function toggleNewReservationModal(id = null) {
     if (modal.classList.contains('hidden')) {
-        // Opening modal
         modal.classList.remove('hidden');
         setTimeout(() => {
             modalContent.classList.add('scale-100', 'opacity-100');
@@ -43,7 +149,6 @@ function toggleNewReservationModal(id = null) {
             editingId = null;
             modalTitle.textContent = 'Nova Reserva';
             form.reset();
-            // Default dates
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('checkinDate').value = today;
             const tomorrow = new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0];
@@ -53,41 +158,28 @@ function toggleNewReservationModal(id = null) {
             calculatePreview();
         }
     } else {
-        // Closing modal
         modalContent.classList.remove('scale-100', 'opacity-100');
         modalContent.classList.add('scale-95', 'opacity-0');
-        setTimeout(() => {
-            modal.classList.add('hidden');
-        }, 300);
+        setTimeout(() => { modal.classList.add('hidden'); }, 300);
     }
 }
 
 function calculateNights() {
     const checkin = document.getElementById('checkinDate').value;
     const checkout = document.getElementById('checkoutDate').value;
-    
-    // Auto set cleaning date to checkout
-    if (checkout) {
-        document.getElementById('cleaningDate').value = checkout;
-    }
+    if (checkout) document.getElementById('cleaningDate').value = checkout;
 
     if (checkin && checkout) {
         const inDate = new Date(checkin);
         const outDate = new Date(checkout);
-        const diffTime = Math.abs(outDate - inDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
         if (outDate <= inDate) {
-            document.getElementById('nightsCount').textContent = 'Erro nas datas';
-            document.getElementById('nightsCount').classList.add('text-red-500');
+            document.getElementById('nightsCount').textContent = 'Erro';
             return 0;
-        } else {
-            document.getElementById('nightsCount').textContent = diffDays;
-            document.getElementById('nightsCount').classList.remove('text-red-500');
-            return diffDays;
         }
+        const diffDays = Math.ceil(Math.abs(outDate - inDate) / (1000 * 60 * 60 * 24));
+        document.getElementById('nightsCount').textContent = diffDays;
+        return diffDays;
     }
-    document.getElementById('nightsCount').textContent = '0';
     return 0;
 }
 
@@ -97,7 +189,7 @@ function calculatePreview() {
     const cleaningFeePaid = parseFloat(document.getElementById('cleaningFeePaid').value) || 0;
     const cleanerPay = parseFloat(document.getElementById('cleanerPay').value) || 0;
 
-    const cleaningProfit = cleaningFeePaid - cleanerPay; // R$ 14 in default case
+    const cleaningProfit = cleaningFeePaid - cleanerPay;
     const hostEarned = (totalValue * (hostFeePercent / 100)) + cleaningProfit;
     const ownerEarned = totalValue - (totalValue * (hostFeePercent / 100)) - cleaningFeePaid;
 
@@ -106,57 +198,6 @@ function calculatePreview() {
     document.getElementById('preview-cleaner').textContent = formatCurrency(cleanerPay);
     
     return { hostEarned, ownerEarned, cleanerPay };
-}
-
-function saveReservation() {
-    if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-    }
-
-    const { hostEarned, ownerEarned, cleanerPay } = calculatePreview();
-    
-    const reservationData = {
-        id: editingId || Date.now().toString(),
-        propertyName: document.getElementById('propertyName').value,
-        platform: document.getElementById('platform').value,
-        guestName: document.getElementById('guestName').value,
-        secondGuestName: document.getElementById('secondGuestName').value,
-        visitorsName: document.getElementById('visitorsName').value,
-        carDetails: document.getElementById('carDetails').value,
-        checkinDate: document.getElementById('checkinDate').value,
-        checkoutDate: document.getElementById('checkoutDate').value,
-        nights: calculateNights(),
-        totalValue: parseFloat(document.getElementById('totalValue').value) || 0,
-        hostFeePercent: parseFloat(document.getElementById('hostFeePercent').value) || 10,
-        cleaningFeePaid: parseFloat(document.getElementById('cleaningFeePaid').value) || 130,
-        cleanerPay: parseFloat(document.getElementById('cleanerPay').value) || 116,
-        cleanerName: document.getElementById('cleanerName').value,
-        cleaningDate: document.getElementById('cleaningDate').value,
-        
-        // Calculated fields
-        hostEarned,
-        ownerEarned
-    };
-
-    if (editingId) {
-        const index = reservations.findIndex(r => r.id === editingId);
-        if (index !== -1) reservations[index] = reservationData;
-    } else {
-        reservations.push(reservationData);
-    }
-
-    saveToLocalStorage();
-    renderUI();
-    toggleNewReservationModal();
-}
-
-function deleteReservation(id) {
-    if (confirm('Tem certeza que deseja excluir esta reserva?')) {
-        reservations = reservations.filter(r => r.id !== id);
-        saveToLocalStorage();
-        renderUI();
-    }
 }
 
 function fillFormWithData(id) {
@@ -182,262 +223,142 @@ function fillFormWithData(id) {
     calculatePreview();
 }
 
-// Logic & Render
-
 function formatCurrency(value) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
 function formatDate(dateString) {
     const parts = dateString.split('-');
-    if (parts.length !== 3) return dateString;
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return parts.length !== 3 ? dateString : `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 function setupMonthFilter() {
     const select = document.getElementById('filter-month');
     const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth(); // 0-11
-    const currentYear = currentDate.getFullYear();
-    
-    // Add last 6 months and next 6 months
+    const d = new Date();
     for (let i = -6; i <= 6; i++) {
-        const d = new Date(currentYear, currentMonth + i, 1);
-        const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        const label = `${months[d.getMonth()]} ${d.getFullYear()}`;
-        
+        const target = new Date(d.getFullYear(), d.getMonth() + i, 1);
+        const value = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
         const option = document.createElement('option');
         option.value = value;
-        option.textContent = label;
-        
-        // Select current month
+        option.textContent = `${months[target.getMonth()]} ${target.getFullYear()}`;
         if (i === 0) option.selected = true;
-        
         select.appendChild(option);
     }
 }
 
-function getFilteredReservations() {
-    const monthFilter = document.getElementById('filter-month').value; // format: YYYY-MM
+function renderUI() {
+    const monthFilter = document.getElementById('filter-month').value;
     const platformFilter = document.getElementById('filter-platform').value;
 
-    return reservations.filter(r => {
-        // Platform filter
+    const filtered = reservations.filter(r => {
         if (platformFilter !== 'all' && r.platform !== platformFilter) return false;
-        
-        // Month filter based on checkout date or checkin date (we check if any of them falls in that month)
         if (monthFilter !== 'all') {
             const inMonth = r.checkinDate.startsWith(monthFilter);
             const outMonth = r.checkoutDate.startsWith(monthFilter);
             if (!inMonth && !outMonth) return false;
         }
-        
         return true;
     }).sort((a, b) => new Date(a.checkinDate) - new Date(b.checkinDate));
-}
 
-function renderUI() {
-    const filtered = getFilteredReservations();
     renderTable(filtered);
-    updateDashboard();
+    updateDashboard(filtered, monthFilter);
 }
 
 function renderTable(data) {
     tableBody.innerHTML = '';
-    
     if (data.length === 0) {
-        tableBody.innerHTML = `
-            <tr>
-                <td colspan="6" class="px-6 py-8 text-center text-gray-500">
-                    <div class="flex flex-col items-center justify-center">
-                        <i class="fa-regular fa-folder-open text-4xl mb-3 text-gray-300"></i>
-                        <p>Nenhuma reserva encontrada.</p>
-                        <button onclick="toggleNewReservationModal()" class="mt-4 text-brand-600 hover:underline font-medium">Adicionar reserva</button>
-                    </div>
-                </td>
-            </tr>
-        `;
+        tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Nenhuma reserva encontrada.</td></tr>`;
         return;
     }
 
     data.forEach(r => {
-        // Platform styling
-        let platformClass = 'bg-gray-100 text-gray-800';
-        if (r.platform === 'Airbnb') platformClass = 'bg-red-50 text-red-600 border border-red-100';
-        if (r.platform === 'Booking') platformClass = 'bg-blue-50 text-blue-600 border border-blue-100';
+        let platformClass = r.platform === 'Airbnb' ? 'bg-red-50 text-red-600 border-red-100' : 
+                          (r.platform === 'Booking' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-gray-100 text-gray-800');
 
         const tr = document.createElement('tr');
         tr.className = 'bg-white border-b hover:bg-gray-50 transition-colors';
-        
         tr.innerHTML = `
             <td class="px-6 py-4">
                 <div class="font-bold text-gray-900">${r.guestName}</div>
-                <div class="text-xs text-gray-500 mt-1"><i class="fa-solid fa-house fa-fw"></i> ${r.propertyName}</div>
-                ${r.carDetails ? `<div class="text-xs text-gray-500 mt-0.5"><i class="fa-solid fa-car fa-fw"></i> ${r.carDetails}</div>` : ''}
-            </td>
-            <td class="px-6 py-4">
-                <div class="text-gray-900 flex items-center gap-1"><i class="fa-solid fa-arrow-right-to-bracket text-green-500 w-4"></i> ${formatDate(r.checkinDate)}</div>
-                <div class="text-gray-900 flex items-center gap-1 mt-1"><i class="fa-solid fa-arrow-right-from-bracket text-orange-500 w-4"></i> ${formatDate(r.checkoutDate)}</div>
-                <span class="inline-flex items-center justify-center px-2 py-0.5 mt-2 ms-0 text-xs font-medium text-gray-500 bg-gray-100 rounded">${r.nights} diárias</span>
-            </td>
-            <td class="px-6 py-4">
-                <span class="px-2.5 py-1 rounded-md text-xs font-medium ${platformClass}">
-                    ${r.platform}
-                </span>
+                <div class="text-xs text-gray-500 mt-1"><i class="fa-solid fa-house"></i> ${r.propertyName}</div>
             </td>
             <td class="px-6 py-4 text-sm">
-                <div class="text-gray-900"><span class="text-gray-500">Valor Bruto:</span> <span class="font-medium">${formatCurrency(r.totalValue)}</span></div>
-                <div class="text-emerald-600 mt-1"><span class="text-emerald-600/70">Prop:</span> <span class="font-bold">${formatCurrency(r.ownerEarned)}</span></div>
-                <div class="text-brand-600 mt-1"><span class="text-brand-600/70">Gestão:</span> <span class="font-bold">${formatCurrency(r.hostEarned)}</span></div>
+                <div>In: ${formatDate(r.checkinDate)}</div>
+                <div>Out: ${formatDate(r.checkoutDate)}</div>
+            </td>
+            <td class="px-6 py-4"><span class="px-2 py-1 rounded text-xs font-medium border ${platformClass}">${r.platform}</span></td>
+            <td class="px-6 py-4 text-sm">
+                <div class="font-bold text-emerald-600">Prop: ${formatCurrency(r.ownerEarned)}</div>
+                <div class="font-bold text-brand-600">Gestão: ${formatCurrency(r.hostEarned)}</div>
             </td>
             <td class="px-6 py-4 text-sm">
-                <div class="text-gray-900"><i class="fa-solid fa-broom text-gray-400"></i> ${formatDate(r.cleaningDate || r.checkoutDate)}</div>
-                <div class="text-gray-600 mt-1">${r.cleanerName || 'Não definido'}</div>
-                <div class="text-gray-800 font-medium mt-1">Ganha: ${formatCurrency(r.cleanerPay)}</div>
+                <div><i class="fa-solid fa-broom"></i> ${formatDate(r.cleaningDate || r.checkoutDate)}</div>
+                <div class="text-gray-500">${r.cleanerName || '-'}</div>
             </td>
             <td class="px-6 py-4 text-right">
-                <button onclick="toggleNewReservationModal('${r.id}')" class="font-medium text-brand-600 hover:text-brand-900 mr-3 px-2 py-1 rounded hover:bg-brand-50 transition-colors" title="Editar">
-                    <i class="fa-solid fa-pen"></i>
-                </button>
-                <button onclick="deleteReservation('${r.id}')" class="font-medium text-red-600 hover:text-red-900 px-2 py-1 rounded hover:bg-red-50 transition-colors" title="Excluir">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
+                <button onclick="toggleNewReservationModal('${r.id}')" class="text-brand-600 hover:bg-brand-50 p-2 rounded"><i class="fa-solid fa-pen"></i></button>
+                <button onclick="deleteReservation('${r.id}')" class="text-red-600 hover:bg-red-50 p-2 rounded"><i class="fa-solid fa-trash"></i></button>
             </td>
         `;
         tableBody.appendChild(tr);
     });
 }
 
-function updateDashboard() {
+function updateDashboard(filteredData, currentMonthFilter) {
     const todayStr = new Date().toISOString().split('T')[0];
     
-    // Calcula datas da semana atual (Domingo a Sábado)
-    const today = new Date();
-    const firstDayOfWeek = new Date(today.setDate(today.getDate() - today.getDay())).toISOString().split('T')[0];
-    const lastDayOfWeek = new Date(today.setDate(today.getDate() - today.getDay() + 6)).toISOString().split('T')[0];
-
-    let todayCheckins = 0;
-    let todayCheckouts = 0;
-    
-    let weekReservations = 0;
-    let weekGuests = 0;
-
-    let monthOwner = 0;
-    let monthHost = 0;
-    let monthCleaner = 0;
-
-    // Dictionary to hold property based earnings
+    let todayCheckins = 0, todayCheckouts = 0, weekReservations = 0, weekGuests = 0;
+    let monthOwner = 0, monthHost = 0, monthCleaner = 0;
     const propertyEarnings = {};
 
-    // Use current viewed month for monthly earnings instead of ALL reservations
-    const currentMonthFilter = document.getElementById('filter-month').value;
-    
+    // Dados baseados em todas as reservas para indicadores diários/semanais
+    const today = new Date();
+    const startWeek = new Date(today.setDate(today.getDate() - today.getDay())).toISOString().split('T')[0];
+    const endWeek = new Date(today.setDate(today.getDate() - today.getDay() + 6)).toISOString().split('T')[0];
+
     reservations.forEach(r => {
-        // Daily
         if (r.checkinDate === todayStr) todayCheckins++;
         if (r.checkoutDate === todayStr) todayCheckouts++;
-        
-        // Weekly (checkin occurs in this week)
-        if (r.checkinDate >= firstDayOfWeek && r.checkinDate <= lastDayOfWeek) {
+        if (r.checkinDate >= startWeek && r.checkinDate <= endWeek) {
             weekReservations++;
-            // Calculate total guests
-            let guests = 1; // main guest
-            if (r.secondGuestName) guests++;
-            if (r.visitorsName) {
-                // simple split by comma to count visitors roughly
-                const visitorsCount = r.visitorsName.split(',').filter(v => v.trim().length > 0).length;
-                guests += visitorsCount;
-            }
-            weekGuests += guests;
-        }
-
-        // Monthly (matches filter)
-        if (currentMonthFilter === 'all' || r.checkoutDate.startsWith(currentMonthFilter) || r.checkinDate.startsWith(currentMonthFilter)) {
-            monthOwner += r.ownerEarned || 0;
-            monthHost += r.hostEarned || 0;
-            monthCleaner += r.cleanerPay || 0;
-            
-            // Per property aggregation
-            const propName = r.propertyName || 'Desconhecido';
-            if (!propertyEarnings[propName]) {
-                propertyEarnings[propName] = { owner: 0, host: 0, cleaner: 0 };
-            }
-            propertyEarnings[propName].owner += r.ownerEarned || 0;
-            propertyEarnings[propName].host += r.hostEarned || 0;
-            propertyEarnings[propName].cleaner += r.cleanerPay || 0;
+            weekGuests += (1 + (r.secondGuestName ? 1 : 0) + (r.visitorsName ? r.visitorsName.split(',').length : 0));
         }
     });
 
-    // Update Initial DOM values
+    // Dados baseados no filtro atual para os cards financeiros
+    filteredData.forEach(r => {
+        monthOwner += r.ownerEarned;
+        monthHost += r.hostEarned;
+        monthCleaner += r.cleanerPay;
+
+        if (!propertyEarnings[r.propertyName]) propertyEarnings[r.propertyName] = { owner: 0, host: 0, cleaner: 0 };
+        propertyEarnings[r.propertyName].owner += r.ownerEarned;
+        propertyEarnings[r.propertyName].host += r.hostEarned;
+        propertyEarnings[r.propertyName].cleaner += r.cleanerPay;
+    });
+
     document.getElementById('today-checkins').textContent = todayCheckins;
     document.getElementById('today-checkouts').textContent = todayCheckouts;
-    
     document.getElementById('week-new-reservations').textContent = weekReservations;
     document.getElementById('week-guests').textContent = weekGuests;
-
     document.getElementById('month-owner-earnings').textContent = formatCurrency(monthOwner);
     document.getElementById('month-host-earnings').textContent = formatCurrency(monthHost);
     document.getElementById('month-cleaner-earnings').textContent = formatCurrency(monthCleaner);
-    
-    // Update Property Breakdown
-    const breakdownContainer = document.getElementById('property-breakdown-container');
-    breakdownContainer.innerHTML = '';
-    
-    const propNames = Object.keys(propertyEarnings);
-    
-    if (propNames.length === 0) {
-        breakdownContainer.innerHTML = `
-            <div class="col-span-full py-6 text-center text-gray-500">
-                Nenhuma informação para exibir no mês selecionado.
-            </div>
-        `;
-    } else {
-        propNames.forEach(prop => {
-            const data = propertyEarnings[prop];
-            const card = document.createElement('div');
-            card.className = 'bg-gray-50 rounded-lg p-4 border border-gray-100 hover:border-gray-200 transition-colors';
-            card.innerHTML = `
-                <div class="font-bold text-gray-800 mb-3 flex items-center gap-2 border-b border-gray-200 pb-2">
-                    <i class="fa-solid fa-house fa-sm text-indigo-500"></i> ${prop}
-                </div>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between items-center bg-white p-1.5 rounded">
-                        <span class="text-gray-600">Proprietário</span>
-                        <span class="font-bold text-emerald-600">${formatCurrency(data.owner)}</span>
-                    </div>
-                    <div class="flex justify-between items-center bg-white p-1.5 rounded">
-                        <span class="text-gray-600">Gestão</span>
-                        <span class="font-bold text-blue-600">${formatCurrency(data.host)}</span>
-                    </div>
-                    <div class="flex justify-between items-center bg-white p-1.5 rounded">
-                        <span class="text-gray-600">Limpeza</span>
-                        <span class="font-bold text-gray-700">${formatCurrency(data.cleaner)}</span>
-                    </div>
-                </div>
-            `;
-            breakdownContainer.appendChild(card);
-        });
-    }
-}
 
-// Local Storage Helper functions
-function saveToLocalStorage() {
-    localStorage.setItem('gestaoAirbnbData', JSON.stringify(reservations));
-}
-
-function loadFromLocalStorage() {
-    const data = localStorage.getItem('gestaoAirbnbData');
-    if (data) {
-        try {
-            reservations = JSON.parse(data);
-        } catch (e) {
-            console.error('Failed to parse local storage data');
-            reservations = [];
-        }
-    } else {
-        reservations = [];
-    }
-    renderUI();
+    const container = document.getElementById('property-breakdown-container');
+    container.innerHTML = '';
+    Object.keys(propertyEarnings).forEach(prop => {
+        const d = propertyEarnings[prop];
+        const card = document.createElement('div');
+        card.className = 'bg-gray-50 rounded-lg p-4 border border-gray-100';
+        card.innerHTML = `
+            <div class="font-bold border-b pb-2 mb-2"><i class="fa-solid fa-house text-indigo-500"></i> ${prop}</div>
+            <div class="text-sm space-y-1">
+                <div class="flex justify-between"><span>Proprietário</span><span class="font-bold text-emerald-600">${formatCurrency(d.owner)}</span></div>
+                <div class="flex justify-between"><span>Gestão</span><span class="font-bold text-blue-600">${formatCurrency(d.host)}</span></div>
+                <div class="flex justify-between"><span>Limpeza</span><span class="font-bold text-gray-700">${formatCurrency(d.cleaner)}</span></div>
+            </div>`;
+        container.appendChild(card);
+    });
 }
