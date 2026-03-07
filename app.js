@@ -1,10 +1,13 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Configuracoes do Supabase (via .env)
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const ENV = import.meta.env ?? {};
+const SUPABASE_URL = ENV.VITE_SUPABASE_URL || 'https://cdyzmasihytafnlwzbxt.supabase.co';
 const SUPABASE_KEY =
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
-const RESERVATIONS_TABLE = import.meta.env.VITE_SUPABASE_TABLE || 'reservations';
+    ENV.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    ENV.VITE_SUPABASE_ANON_KEY ||
+    'sb_publishable_C6n-WNNMlGhciNSuSilzpw_OhfN05gx';
+const RESERVATIONS_TABLE = ENV.VITE_SUPABASE_TABLE || 'reservations';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
     throw new Error(
