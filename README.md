@@ -22,6 +22,10 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sua_chave_publishable
 VITE_SUPABASE_TABLE=reservations
 ```
 
+## Banco de dados
+
+- Execute `supabase/reservations_rls.sql` no Supabase SQL Editor para liberar acesso da chave publishable (anon) com RLS ativo.
+
 ## Comandos
 
 - `npm run dev`: ambiente local

@@ -58,6 +58,7 @@ async function loadFromSupabase() {
 
     if (error) {
         console.error('Erro ao buscar dados:', error);
+        tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-red-600">Erro ao carregar reservas no Supabase: ${error.message}</td></tr>`;
         reservations = [];
     } else {
         // Mapear snake_case do banco para camelCase do seu JS
@@ -383,3 +384,13 @@ function updateDashboard(filteredData, currentMonthFilter) {
         container.appendChild(card);
     });
 }
+
+// Inline handlers in index.html call these by name.
+// Since this file is loaded as an ES module, expose them explicitly.
+Object.assign(window, {
+    toggleNewReservationModal,
+    saveReservation,
+    deleteReservation,
+    calculateNights,
+    calculatePreview,
+});
